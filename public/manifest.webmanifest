@@ -1,0 +1,17 @@
+{
+  "name": "Capacity",
+  "short_name": "Capacity",
+  "description": "Body, brain and immersion, tracked separately.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070908",
+  "theme_color": "#070908",
+  "categories": ["health", "productivity"],
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
