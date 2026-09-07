@@ -4,3 +4,11 @@ dist-single
 *.tsbuildinfo
 share-data.json
 dist-share
+
+# secrets — never commit
+.env
+.env.local
+env.txt
+
+# test bundle
+.sync-test.mjs

@@ -7,6 +7,8 @@ import { Trends } from './screens/Trends'
 import { formatDay, minutesSinceMidnight, today } from './domain/date'
 import { duePings, fireNotification, nextPing, slotLabel } from './domain/pings'
 import { StateProvider, useApp } from './store/state'
+import { AuthProvider, useAuth } from './store/auth'
+import { SignIn } from './components/SignIn'
 import type { Domain } from './domain/types'
 
 type Tab = 'today' | 'trends' | 'stages' | 'data'
@@ -19,6 +21,24 @@ const TABS: { id: Tab; label: string; glyph: string }[] = [
 ]
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <Gate />
+    </AuthProvider>
+  )
+}
+
+/**
+ * A cloud-backed build is private, so it asks who you are first. Builds without
+ * Supabase credentials — the artifact, the read-only shared copy, any local
+ * build without a .env — skip the gate entirely and run local-first as before.
+ */
+function Gate() {
+  const auth = useAuth()
+  const isSharedCopy = typeof __SHARED_RECORD__ !== 'undefined' && __SHARED_RECORD__ != null
+
+  if (auth.enabled && !isSharedCopy && !auth.session) return <SignIn />
+
   return (
     <StateProvider>
       <Shell />

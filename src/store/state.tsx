@@ -8,10 +8,27 @@ import type {
   ISODate, MorningEntry, Sample, Settings, StressEvent, WeeklyCheck, WeeklyTarget, Workout,
 } from '../domain/types'
 import type { DomainEval } from '../domain/stages'
-import { loadState, migrate, saveState, uid } from './storage'
+import { STORAGE_KEY, loadState, loadSynced, migrate, saveState, saveSynced, uid } from './storage'
+import { canonical, countOf, mergeStates, pull, pushDiff, verifyMigration, type RecordCounts } from './cloud'
+import { useAuth } from './auth'
+import { cloudEnabled } from './supabase'
+
+/** Everything the Data screen needs to say about the cloud, in one value. */
+export interface SyncState {
+  enabled: boolean
+  signedIn: boolean
+  phase: 'off' | 'signed-out' | 'loading' | 'synced' | 'pushing' | 'offline' | 'error' | 'needs-migration'
+  lastSyncedAt: string | null
+  message: string | null
+  /** set when this device holds a record the cloud has never seen */
+  pending: RecordCounts | null
+}
 
 interface Ctx {
   state: AppState
+  sync: SyncState
+  /** one-time upload of the local record, verified by reading it back */
+  migrateLocal: () => Promise<{ ok: boolean; message: string }>
   /**
    * False in a published read-only copy: the record belongs to someone else,
    * so every control that would write is hidden rather than merely disabled.
@@ -130,12 +147,42 @@ const SHARED: AppState | null = (() => {
 })()
 
 export function StateProvider({ children }: { children: ReactNode }) {
+  const auth = useAuth()
   const [state, setState] = useState<AppState>(() => SHARED ?? loadState())
   const canEdit = SHARED == null
   const timer = useRef<number | undefined>(undefined)
 
+  /*
+   * The last state known to be in the database. A failed push leaves it where
+   * it was, so the next diff still carries the unsent work. That is the whole
+   * offline story — no queue, no replay log.
+   */
+  const synced = useRef<AppState | null>(canEdit ? loadSynced() : null)
+
+  /*
+   * A live handle on the current state.
+   *
+   * doPull must not close over `state`: its useCallback is keyed on the session,
+   * so a captured `state` goes stale the moment anything is logged. A stale
+   * `local` makes the three-way merge read "this row is gone from the device"
+   * and faithfully propagate that as a deletion — which silently destroys rows
+   * in the database. Adding `state` to the deps instead would rebuild doPull on
+   * every keystroke and re-trigger the pull effect, so a ref is the fix.
+   */
+  const latest = useRef<AppState>(state)
+  latest.current = state
+  const [sync, setSync] = useState<SyncState>({
+    enabled: cloudEnabled,
+    signedIn: false,
+    phase: cloudEnabled ? 'loading' : 'off',
+    lastSyncedAt: null,
+    message: null,
+    pending: null,
+  })
+
   const update = useCallback((fn: (s: AppState) => AppState) => setState((s) => fn(s)), [])
 
+  /* ------------------------------------------------------------ local cache */
   useEffect(() => {
     // A shared copy is never written to the viewer's own storage.
     if (!canEdit) return
@@ -143,6 +190,158 @@ export function StateProvider({ children }: { children: ReactNode }) {
     timer.current = window.setTimeout(() => saveState(state), 250)
     return () => window.clearTimeout(timer.current)
   }, [state, canEdit])
+
+  /* ------------------------------------------------------------------ pull */
+  const doPull = useCallback(async () => {
+    const userId = auth.session?.user?.id
+    if (!cloudEnabled || !canEdit || !userId) return
+    setSync((s) => ({ ...s, phase: 'loading', message: null }))
+    try {
+      const { state: remote, empty } = await pull(userId)
+      if (empty) {
+        /*
+         * Nothing in the cloud yet. Never silently overwrite what is on this
+         * device — hand the decision to the Data screen instead.
+         */
+        const local = latest.current
+        const counts = countOf(local)
+        const hasLocal = Object.values(counts).some((n) => n > 0)
+        if (!hasLocal) {
+          synced.current = remote
+          saveSynced(remote)
+        }
+        setSync((s) => ({
+          ...s,
+          signedIn: true,
+          phase: hasLocal ? 'needs-migration' : 'synced',
+          pending: hasLocal ? counts : null,
+          lastSyncedAt: new Date().toISOString(),
+          message: hasLocal ? 'This device holds a record the cloud has never seen.' : null,
+        }))
+        return
+      }
+      /*
+       * Never a plain overwrite. Anything edited on this device since its last
+       * confirmed sync — an offline check-in, say — has to survive the pull, so
+       * the cloud copy is merged against the persisted baseline rather than
+       * replacing what is here. The push effect then sends whatever the merge
+       * kept that the cloud does not yet have.
+       */
+      const baseline = synced.current
+      const merged = mergeStates(baseline, latest.current, remote)
+      const hadPendingWork = canonical(merged) !== canonical(remote)
+
+      setState(merged)
+      synced.current = remote
+      saveSynced(remote)
+      saveState(merged)
+      setSync((s) => ({
+        ...s,
+        signedIn: true,
+        phase: hadPendingWork ? 'pushing' : 'synced',
+        pending: null,
+        lastSyncedAt: new Date().toISOString(),
+        message: hadPendingWork ? 'Sending changes made while you were offline…' : null,
+      }))
+    } catch (err: any) {
+      setSync((s) => ({ ...s, signedIn: true, phase: 'offline', message: err?.message ?? 'Could not reach the cloud.' }))
+    }
+  }, [auth.session, canEdit])
+
+  useEffect(() => {
+    if (!cloudEnabled || !canEdit || auth.loading) return
+    if (!auth.session) {
+      synced.current = null
+      saveSynced(null)
+      setSync((s) => ({ ...s, signedIn: false, phase: 'signed-out', pending: null }))
+      return
+    }
+    void doPull()
+  }, [auth.loading, auth.session, canEdit, doPull])
+
+  /* Returning to the app is exactly when the other device's work is missing. */
+  useEffect(() => {
+    if (!cloudEnabled || !canEdit || !auth.session) return
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void doPull()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [auth.session, canEdit, doPull])
+
+  /* ------------------------------------------------------------------ push */
+  const pushTimer = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    const userId = auth.session?.user?.id
+    if (!cloudEnabled || !canEdit || !userId) return
+    if (sync.phase === 'needs-migration' || sync.phase === 'loading') return
+    if (synced.current === state) return
+
+    window.clearTimeout(pushTimer.current)
+    pushTimer.current = window.setTimeout(async () => {
+      const baseline = synced.current
+      setSync((s) => ({ ...s, phase: 'pushing' }))
+      try {
+        await pushDiff(userId, baseline, state)
+        synced.current = state
+        saveSynced(state)
+        setSync((s) => ({ ...s, phase: 'synced', lastSyncedAt: new Date().toISOString(), message: null }))
+      } catch (err: any) {
+        // Baseline deliberately not advanced: the next diff re-sends this work.
+        setSync((s) => ({
+          ...s,
+          phase: 'offline',
+          message: err?.message ?? 'Saved on this device; it will sync when you are back online.',
+        }))
+      }
+    }, 900)
+    return () => window.clearTimeout(pushTimer.current)
+  }, [state, auth.session, canEdit, sync.phase])
+
+  /* ------------------------------------------------------------- migration */
+  const migrateLocal = useCallback(async (): Promise<{ ok: boolean; message: string }> => {
+    const userId = auth.session?.user?.id
+    if (!userId) return { ok: false, message: 'Sign in first.' }
+    const local = loadState()
+    const before = countOf(local)
+    try {
+      // Keep an untouched copy of exactly what this device held.
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) localStorage.setItem(`${STORAGE_KEY}.premigration.${new Date().toISOString().slice(0, 10)}`, raw)
+
+      setSync((s) => ({ ...s, phase: 'pushing', message: 'Uploading…' }))
+      await pushDiff(userId, null, local)
+
+      // Verify by reading it back rather than trusting the write.
+      const { state: remote } = await pull(userId)
+      const check = verifyMigration(local, remote)
+      if (!check.ok) {
+        setSync((s) => ({
+          ...s,
+          phase: 'error',
+          message: `Upload did not verify: ${check.problems.join('; ')}. Your local record is untouched.`,
+        }))
+        return {
+          ok: false,
+          message: `Verification failed on ${check.problems.length} item${check.problems.length === 1 ? '' : 's'}. Nothing local was changed.`,
+        }
+      }
+
+      setState(remote)
+      synced.current = remote
+      saveState(remote)
+      saveSynced(remote)
+      localStorage.setItem('capacity.migrated.v1', new Date().toISOString())
+      setSync((s) => ({ ...s, phase: 'synced', pending: null, lastSyncedAt: new Date().toISOString(), message: null }))
+      return {
+        ok: true,
+        message: `Uploaded and verified ${check.checked} rows by content: ${before.days} days, ${before.workouts} sessions, ${before.impulses} impulses.`,
+      }
+    } catch (err: any) {
+      setSync((s) => ({ ...s, phase: 'error', message: err?.message ?? 'Upload failed.' }))
+      return { ok: false, message: err?.message ?? 'Upload failed. Your local record is untouched.' }
+    }
+  }, [auth.session])
 
   const actions = useMemo(() => makeActions(update), [update])
   const metrics = useMemo(() => computeMetrics(state), [state])
@@ -159,7 +358,7 @@ export function StateProvider({ children }: { children: ReactNode }) {
     return days[days.length - 1] ?? SHARED.settings.startDate
   }, [])
 
-  const value: Ctx = { state, canEdit, sharedAsOf, metrics, evals, activeFocusPoint, day, actions }
+  const value: Ctx = { state, sync, migrateLocal, canEdit, sharedAsOf, metrics, evals, activeFocusPoint, day, actions }
   return <StateContext.Provider value={value}>{children}</StateContext.Provider>
 }
 

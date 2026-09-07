@@ -12,9 +12,11 @@
     "typecheck": "tsc -b --noEmit",
     "build:artifact": "npm run build:single && node build-artifact.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "share": "node scripts/make-share.mjs"
+    "share": "node scripts/make-share.mjs",
+    "test:sync": "node ./node_modules/esbuild/bin/esbuild scripts/sync.test.ts --bundle --platform=node --format=esm --define:import.meta.env={} --outfile=.sync-test.mjs --log-level=error && node .sync-test.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.115.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

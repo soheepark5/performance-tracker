@@ -11,6 +11,32 @@ import type { AppState } from '../domain/types'
 export const STORAGE_KEY = 'capacity.state.v1'
 export const SCHEMA_VERSION = 1
 
+/**
+ * The last state confirmed to be in the cloud — the common ancestor a pull needs
+ * in order to tell "this row changed here while offline" from "this row changed
+ * on the other device". It must outlive the process, or a restart loses the
+ * ability to distinguish them and unsynced work gets overwritten.
+ */
+export const SYNCED_KEY = 'capacity.synced.v1'
+
+export function loadSynced(): AppState | null {
+  try {
+    const raw = localStorage.getItem(SYNCED_KEY)
+    return raw ? migrate(JSON.parse(raw)) : null
+  } catch {
+    return null
+  }
+}
+
+export function saveSynced(state: AppState | null) {
+  try {
+    if (state) localStorage.setItem(SYNCED_KEY, JSON.stringify(state))
+    else localStorage.removeItem(SYNCED_KEY)
+  } catch (err) {
+    console.error('Could not persist the sync baseline', err)
+  }
+}
+
 export function createInitialState(startDate = today()): AppState {
   return {
     version: SCHEMA_VERSION,

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { Card, Chips, NumberField, Segmented, Sheet, TextField, Tile } from '../components/ui'
+import { CloudCard } from '../components/CloudCard'
 import { DOMAINS, DOMAIN_META, STAGE_MODEL } from '../config/stages'
 import { METRICS, formatMetric } from '../config/metrics'
 import { EXERCISE_KINDS, IMPULSE_KINDS } from '../config/taxonomy'
@@ -43,7 +44,7 @@ export function Data() {
         {state.weeklyTargets.length} weekly targets · logged {formatMetric('loggingRate', metrics.loggingRate.value)} of the last 28 days
       </p>
       <p className="tiny muted center" style={{ margin: 0 }}>
-        {canEdit ? 'v1 · all data stays in this browser' : 'v1 · a read-only copy; nothing is stored on your device'}
+        {canEdit ? 'v1' : 'v1 · a read-only copy; nothing is stored on your device'}
       </p>
     </>
   )
@@ -113,6 +114,7 @@ function SettingsTab() {
         <NumberField label="Objective anchor every" unit="days" min={7} step={7} value={s.anchorIntervalDays} onChange={(v) => actions.updateSettings({ anchorIntervalDays: v ?? 91 })} />
       </Card>
 
+      <CloudCard />
       <LiftsCard />
       <ProtocolCard />
       <BackupCard />

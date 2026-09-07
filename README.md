@@ -16,6 +16,7 @@ npm run build:single # dist-single/     — one self-contained index.html
 npm run build:artifact # artifact/capacity.html — the same build, wrapped for hosting
 npm run icons        # regenerate the home-screen icons from the palette
 npm run typecheck
+npm run test:sync    # merge + migration-verification tests
 ```
 
 No backend, no accounts, no API keys, no model calls. Everything — including every
