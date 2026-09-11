@@ -12,6 +12,7 @@ import { STORAGE_KEY, loadState, loadSynced, migrate, saveState, saveSynced, uid
 import { canonical, countOf, mergeStates, pull, pushDiff, verifyMigration, type RecordCounts } from './cloud'
 import { useAuth } from './auth'
 import { cloudEnabled } from './supabase'
+import { localDateOf } from '../domain/date'
 
 /** Everything the Data screen needs to say about the cloud, in one value. */
 export interface SyncState {
@@ -47,6 +48,9 @@ const StateContext = createContext<Ctx | null>(null)
 
 const emptyDay = (date: ISODate): DayLog => ({ date, samples: [] })
 
+/** An event's calendar day always follows its timestamp, so editing the time moves it. */
+const withDate = <T extends { at: string; date: string }>(x: T): T => ({ ...x, date: localDateOf(x.at) })
+
 function makeActions(update: (fn: (s: AppState) => AppState) => void) {
   const patchDay = (date: ISODate, fn: (d: DayLog) => DayLog) =>
     update((s) => ({ ...s, days: { ...s.days, [date]: fn(s.days[date] ?? emptyDay(date)) } }))
@@ -64,8 +68,8 @@ function makeActions(update: (fn: (s: AppState) => AppState) => void) {
     removeSample: (date: ISODate, id: string) =>
       patchDay(date, (d) => ({ ...d, samples: d.samples.filter((s) => s.id !== id) })),
 
-    addWorkout: (w: Omit<Workout, 'id' | 'at'>) =>
-      update((s) => ({ ...s, workouts: [...s.workouts, { ...w, id: uid(), at: new Date().toISOString() }] })),
+    addWorkout: (w: Omit<Workout, 'id'>) =>
+      update((s) => ({ ...s, workouts: [...s.workouts, { ...w, id: uid() }] })),
 
     updateWorkout: (id: string, patch: Partial<Workout>) =>
       update((s) => ({ ...s, workouts: s.workouts.map((w) => (w.id === id ? { ...w, ...patch } : w)) })),
@@ -98,13 +102,19 @@ function makeActions(update: (fn: (s: AppState) => AppState) => void) {
 
     saveLifts: (lifts: AppState['lifts']) => update((s) => ({ ...s, lifts })),
 
-    addStress: (e: Omit<StressEvent, 'id' | 'at' | 'date'>, at = new Date()) =>
-      update((s) => ({ ...s, stress: [...s.stress, { ...e, id: uid(), at: at.toISOString(), date: today() }] })),
+    addStress: (e: Omit<StressEvent, 'id' | 'date'>) =>
+      update((s) => ({ ...s, stress: [...s.stress, withDate({ ...e, id: uid(), date: '' })] })),
+
+    updateStress: (id: string, patch: Partial<Omit<StressEvent, 'id' | 'date'>>) =>
+      update((s) => ({ ...s, stress: s.stress.map((e) => (e.id === id ? withDate({ ...e, ...patch }) : e)) })),
 
     deleteStress: (id: string) => update((s) => ({ ...s, stress: s.stress.filter((e) => e.id !== id) })),
 
-    addImpulse: (e: Omit<ImpulseEvent, 'id' | 'at' | 'date'>, at = new Date()) =>
-      update((s) => ({ ...s, impulses: [...s.impulses, { ...e, id: uid(), at: at.toISOString(), date: today() }] })),
+    addImpulse: (e: Omit<ImpulseEvent, 'id' | 'date'>) =>
+      update((s) => ({ ...s, impulses: [...s.impulses, withDate({ ...e, id: uid(), date: '' })] })),
+
+    updateImpulse: (id: string, patch: Partial<Omit<ImpulseEvent, 'id' | 'date'>>) =>
+      update((s) => ({ ...s, impulses: s.impulses.map((i) => (i.id === id ? withDate({ ...i, ...patch }) : i)) })),
 
     deleteImpulse: (id: string) => update((s) => ({ ...s, impulses: s.impulses.filter((e) => e.id !== id) })),
 

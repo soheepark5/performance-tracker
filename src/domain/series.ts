@@ -90,8 +90,8 @@ export function weeklyRows(state: AppState, from: ISODate, to: ISODate): WeekRow
   for (const i of state.impulses) {
     const row = touch(i.date)
     if (!row) continue
-    if (i.intensity >= 7) row.strongImpulses += 1
-    row.disruptionMin += i.disruptionMinutes
+    if ((i.intensity ?? 0) >= 7) row.strongImpulses += 1
+    row.disruptionMin += i.disruptionMinutes ?? 0
   }
   for (const s of state.stress) {
     const row = touch(s.date)

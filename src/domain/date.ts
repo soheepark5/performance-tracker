@@ -73,3 +73,23 @@ export function parseClock(hhmm: string): number {
 export function minutesSinceMidnight(d = new Date()): number {
   return d.getHours() * 60 + d.getMinutes()
 }
+
+/** The local calendar day an ISO timestamp falls on. */
+export function localDateOf(iso: string): ISODate {
+  return toISODate(new Date(iso))
+}
+
+/** A Date as a `datetime-local` input value: "YYYY-MM-DDTHH:mm", local time. */
+export function toLocalInput(d: Date): string {
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${toISODate(d)}T${hh}:${mm}`
+}
+
+/** Parses a `datetime-local` value as local time, without relying on engine quirks. */
+export function fromLocalInput(s: string): Date {
+  const [datePart, timePart = '12:00'] = s.split('T')
+  const [y, m, d] = datePart.split('-').map(Number)
+  const [h, mi] = timePart.split(':').map(Number)
+  return new Date(y, m - 1, d, h || 0, mi || 0)
+}

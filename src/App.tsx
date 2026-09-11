@@ -9,6 +9,7 @@ import { duePings, fireNotification, nextPing, slotLabel } from './domain/pings'
 import { StateProvider, useApp } from './store/state'
 import { AuthProvider, useAuth } from './store/auth'
 import { SignIn } from './components/SignIn'
+import { pushBack } from './components/backstack'
 import type { Domain } from './domain/types'
 
 type Tab = 'today' | 'trends' | 'stages' | 'data'
@@ -49,6 +50,16 @@ function Gate() {
 function Shell() {
   const { state, day } = useApp()
   const [tab, setTab] = useState<Tab>('today')
+  /*
+   * Every tab change is a history step, so the phone's back button walks back
+   * through what you looked at instead of closing the installed app.
+   */
+  const go = (next: Tab) => {
+    if (next === tab) return
+    const prev = tab
+    pushBack(() => setTab(prev))
+    setTab(next)
+  }
   const [domain, setDomain] = useState<Domain>('body')
   useMidnightTick()
   useReminders()
@@ -65,7 +76,7 @@ function Shell() {
             <div className="sub">{formatDay(date)}</div>
           </div>
           {pending > 0 && tab !== 'today' && (
-            <button className="btn small" onClick={() => setTab('today')}>
+            <button className="btn small" onClick={() => go('today')}>
               {pending} check-in{pending === 1 ? '' : 's'} waiting
             </button>
           )}
@@ -73,7 +84,7 @@ function Shell() {
       </header>
 
       <main>
-        {tab === 'today' && <Today goToStages={(d) => { setDomain(d); setTab('stages') }} />}
+        {tab === 'today' && <Today goToStages={(d) => { setDomain(d); go('stages') }} />}
         {tab === 'trends' && <Trends domain={domain} setDomain={setDomain} />}
         {tab === 'stages' && <Stages domain={domain} setDomain={setDomain} />}
         {tab === 'data' && <Data />}
@@ -81,7 +92,7 @@ function Shell() {
 
       <nav className="nav" aria-label="Sections">
         {TABS.map((t) => (
-          <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
+          <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => go(t.id)}>
             <span className="glyph" aria-hidden="true">{t.glyph}</span>
             {t.label}
           </button>

@@ -1,3 +1,4 @@
+import { formatDuration } from '../domain/date'
 import type { AnchorProtocol, ExerciseKind, ImpulseKind, ImpulseOutcome, LiftSpec, StressReaction } from '../domain/types'
 
 /** Which optional performance fields are worth asking for, per exercise kind. */
@@ -78,4 +79,17 @@ export const DEFAULT_ANCHOR: AnchorProtocol = {
     { key: 'deadlift3rm', label: 'Deadlift 3-rep max', unit: 'kg', better: 'higher' },
     { key: 'hrr60', label: 'HR drop 60s after effort', unit: 'bpm', better: 'higher' },
   ],
+}
+
+/**
+ * "All day" for an urge, stored as real minutes like every other duration: a
+ * sixteen-hour waking day. A named constant so the definition can change without
+ * anyone having to guess where 960 came from.
+ */
+export const ALL_DAY_MINUTES = 16 * 60
+
+/** An urge duration for display: minutes, or "all day". */
+export function formatUrge(min: number | undefined): string {
+  if (min == null) return '-'
+  return min >= ALL_DAY_MINUTES ? 'all day' : formatDuration(min)
 }

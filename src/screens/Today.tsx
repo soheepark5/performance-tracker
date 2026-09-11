@@ -1,21 +1,24 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { SAMPLE_OPTIONS } from '../config/scales'
 import { DOMAINS, DOMAIN_META } from '../config/stages'
-import { EXERCISE_KINDS } from '../config/taxonomy'
+import { EXERCISE_KINDS, IMPULSE_KINDS, IMPULSE_OUTCOMES, formatUrge } from '../config/taxonomy'
 import {
   AnchorForm, EveningForm, FocusPointForm, ImpulseForm, MorningForm, StressForm,
   WeeklyForm, WeeklyTargetForm, WorkoutForm,
 } from '../components/forms'
 import { BottleneckLine, DOMAIN_COLOR, StageHeadline } from '../components/stage'
 import { Card, Empty, ScaleInput, Sheet } from '../components/ui'
-import { addDays, daysBetween, formatDay, formatDuration, formatShort, fromISODate, today, weekStart } from '../domain/date'
+import {
+  addDays, daysBetween, formatDay, formatDuration, formatShort, formatTime, fromISODate, today, weekStart,
+} from '../domain/date'
 import { duePings, nextPing, slotLabel } from '../domain/pings'
 import { calibrationProgress, isCalibrating } from '../domain/stages'
 import { useApp } from '../store/state'
 import type { Domain, SampleState } from '../domain/types'
 
 type SheetKind =
-  | { k: 'morning' } | { k: 'evening' } | { k: 'workout' } | { k: 'impulse' } | { k: 'stress' }
+  | { k: 'morning' } | { k: 'evening' }
+  | { k: 'workout'; id?: string } | { k: 'impulse'; id?: string } | { k: 'stress'; id?: string }
   | { k: 'weekly'; week: string } | { k: 'target'; week: string } | { k: 'anchor' } | { k: 'focus' }
   | { k: 'recovery'; id: string }
 
@@ -23,12 +26,21 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
   const { state, day, evals, actions, activeFocusPoint, canEdit, sharedAsOf } = useApp()
   const [sheet, setSheet] = useState<SheetKind | null>(null)
   const [extraPing, setExtraPing] = useState(false)
-  const date = today()
+
+  /*
+   * The day being looked at. null means "follow the calendar", so the screen
+   * rolls over at midnight by itself instead of getting stuck on yesterday.
+   */
+  const now = today()
+  const [viewDate, setViewDate] = useState<string | null>(null)
+  const date = viewDate ?? now
+  const isToday = date === now
   const d = day(date)
+  const td = day(now)
   const close = () => setSheet(null)
 
-  const due = duePings(state, d, date)
-  const upcoming = nextPing(state, d, date)
+  const due = duePings(state, td, now)
+  const upcoming = nextPing(state, td, now)
   const calibrating = isCalibrating(state)
   const cal = calibrationProgress(state)
 
@@ -38,21 +50,21 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
    * lost — an unrated finished week keeps offering itself until it is answered.
    */
   const weeklyDue = useMemo(() => {
-    const thisWeek = weekStart(date)
+    const thisWeek = weekStart(now)
     const lastWeek = addDays(thisWeek, -7)
     const has = (w: string) => state.weekly.some((x) => x.weekStart === w)
-    const isSunday = fromISODate(date).getDay() === 0
+    const isSunday = fromISODate(now).getDay() === 0
     const missed = !has(lastWeek) && daysBetween(state.settings.startDate, lastWeek) >= 0 ? lastWeek : null
     const current = has(thisWeek) ? null : thisWeek
     return { missed, current, isSunday, dueOn: addDays(thisWeek, 6) }
-  }, [state.weekly, state.settings.startDate, date])
+  }, [state.weekly, state.settings.startDate, now])
 
   /*
    * The intensity target opens the week the reserve question closes: set Monday,
    * rated Sunday. An unset target from a past week keeps offering itself.
    */
   const targetDue = useMemo(() => {
-    const thisWeek = weekStart(date)
+    const thisWeek = weekStart(now)
     const lastWeek = addDays(thisWeek, -7)
     const has = (w: string) => state.weeklyTargets.some((t) => t.weekStart === w)
     return {
@@ -60,18 +72,17 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
       missed: !has(lastWeek) && daysBetween(state.settings.startDate, lastWeek) >= 0 ? lastWeek : null,
       set: state.weeklyTargets.find((t) => t.weekStart === thisWeek) ?? null,
     }
-  }, [state.weeklyTargets, state.settings.startDate, date])
+  }, [state.weeklyTargets, state.settings.startDate, now])
 
   const lastAnchor = state.anchors[state.anchors.length - 1]
-  const anchorDue =
-    !lastAnchor || daysBetween(lastAnchor.date, date) >= state.settings.anchorIntervalDays
+  const anchorDue = !lastAnchor || daysBetween(lastAnchor.date, now) >= state.settings.anchorIntervalDays
   const protocol = state.anchorProtocols[state.anchorProtocols.length - 1]
 
   /* a session logged yesterday whose next-day cost has not been filled in */
   const yesterdaysSession = useMemo(() => {
-    const y = addDays(date, -1)
+    const y = addDays(now, -1)
     return state.workouts.find((w) => w.date === y && w.recoveryCost == null) ?? null
-  }, [state.workouts, date])
+  }, [state.workouts, now])
 
   /* Nothing recorded at all: someone opening this for the first time. */
   const firstRun =
@@ -79,6 +90,11 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
     !state.workouts.length &&
     !state.weekly.length &&
     !state.focusPoints.length
+
+  const eventTitle = (noun: string, id?: string) => {
+    if (id) return `Edit ${noun}`
+    return isToday ? `Log ${noun}` : `Log ${noun} · ${formatShort(date)}`
+  }
 
   return (
     <>
@@ -90,13 +106,15 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
         </div>
       )}
       {firstRun && canEdit && <FirstRun />}
-      {calibrating && canEdit && (
+      {calibrating && canEdit && isToday && (
         <div className="banner">
           <strong>Calibration — week {cal.week} of {cal.total}.</strong> Stages are shown so you can see the machinery
           working, but the thresholds are first guesses. Around {formatShort(cal.endsOn)} there will be enough of your own
           data to set them properly.
         </div>
       )}
+
+      {canEdit && <OpenImpulses onFinish={(id) => setSheet({ k: 'impulse', id })} />}
 
       {/* ------------------------------------------------------ focus point */}
       <Card
@@ -108,7 +126,7 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
             <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.3 }}>{activeFocusPoint.title}</div>
             {activeFocusPoint.why && <p className="small muted" style={{ margin: '4px 0 0' }}>{activeFocusPoint.why}</p>}
             <p className="tiny muted" style={{ margin: '6px 0 0' }}>
-              Held for {daysBetween(activeFocusPoint.startedAt.slice(0, 10), date)} days
+              Held for {daysBetween(activeFocusPoint.startedAt.slice(0, 10), now)} days
             </p>
           </>
         ) : (
@@ -116,12 +134,24 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
         )}
       </Card>
 
+      {/* ---------------------------------------------------------- the day */}
+      {canEdit && (
+        <DayBar
+          date={date}
+          min={state.settings.startDate}
+          onChange={(v) => {
+            setViewDate(v === today() ? null : v)
+            setExtraPing(false)
+          }}
+        />
+      )}
+
       {/* ------------------------------------------------------------ ping */}
-      {!canEdit ? null : due.length > 0 || extraPing ? (
+      {!canEdit || !isToday ? null : due.length > 0 || extraPing ? (
         <PingCard
           label={due.length > 0 ? due[0].label : 'Extra check'}
           onAnswer={(answer) => {
-            actions.addSample(date, { slot: due.length > 0 ? due[0].slot : 'manual', state: answer })
+            actions.addSample(now, { slot: due.length > 0 ? due[0].slot : 'manual', state: answer })
             setExtraPing(false)
           }}
           onCancel={due.length > 0 ? undefined : () => setExtraPing(false)}
@@ -131,9 +161,9 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
           <div className="row between">
             <div className="grow">
               <div className="small">
-                <span className="done-mark">✓</span> Attention samples answered — {d.samples.length} today
+                <span className="done-mark">✓</span> Attention samples answered — {td.samples.length} today
               </div>
-              <SampleBreakdown samples={d.samples} />
+              <SampleBreakdown samples={td.samples} />
               {upcoming && <div className="tiny muted">Next around {clock(upcoming.at)} · {slotLabel(upcoming.slot)}</div>}
             </div>
             <button className="btn small ghost" onClick={() => setExtraPing(true)} title="Answer one extra attention sample now">
@@ -147,100 +177,102 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
 
       {/* -------------------------------------------------------- check-ins */}
       {canEdit && (
-      <Card title="Daily check-ins" desc="Two short moments. Everything else is optional.">
-        <CheckRow
-          label="Morning"
-          detail={d.morning ? `clarity ${d.morning.clarity} · baseline ${d.morning.emotionalBaseline}` : 'clarity, emotional baseline'}
-          done={!!d.morning}
-          onClick={() => setSheet({ k: 'morning' })}
-        />
-        <CheckRow
-          label="End of work"
-          detail={d.evening ? `clarity ${d.evening.clarity} · coverage ${d.evening.coverageReported}% · continuity ${d.evening.fpContinuity}` : 'clarity + immersion reflection'}
-          done={!!d.evening}
-          onClick={() => setSheet({ k: 'evening' })}
-        />
-        {targetDue.current && (
+        <Card
+          title={isToday ? 'Daily check-ins' : `Check-ins — ${formatDay(date)}`}
+          desc={isToday ? 'Two short moments. Everything else is optional.' : 'Filling in or correcting a past day.'}
+        >
           <CheckRow
-            label={`Intensity target — ${weekLabel(targetDue.current)}`}
-            detail={
-              state.weeklyTargets.length
-                ? 'Carry last week forward, or raise it'
-                : 'Five lifts — this first one becomes your baseline'
-            }
-            done={false}
-            onClick={() => setSheet({ k: 'target', week: targetDue.current! })}
+            label="Morning"
+            detail={d.morning ? `clarity ${d.morning.clarity} · baseline ${d.morning.emotionalBaseline}` : 'clarity, emotional baseline'}
+            done={!!d.morning}
+            onClick={() => setSheet({ k: 'morning' })}
           />
-        )}
-        {targetDue.set && (
           <CheckRow
-            label={`Intensity target — ${weekLabel(targetDue.set.weekStart)}`}
-            detail={targetSummary(state.lifts, targetDue.set)}
-            done
-            onClick={() => setSheet({ k: 'target', week: targetDue.set!.weekStart })}
+            label="End of work"
+            detail={d.evening ? `clarity ${d.evening.clarity} · coverage ${d.evening.coverageReported}% · continuity ${d.evening.fpContinuity}` : 'clarity + immersion reflection'}
+            done={!!d.evening}
+            onClick={() => setSheet({ k: 'evening' })}
           />
-        )}
-        {targetDue.missed && (
-          <CheckRow
-            label={`Intensity target — ${weekLabel(targetDue.missed)}`}
-            detail="Last week never had a target set"
-            done={false}
-            onClick={() => setSheet({ k: 'target', week: targetDue.missed! })}
-          />
-        )}
-        {weeklyDue.missed && (
-          <CheckRow
-            label={`Weekly reserve — ${weekLabel(weeklyDue.missed)}`}
-            detail="Last week was never rated"
-            done={false}
-            onClick={() => setSheet({ k: 'weekly', week: weeklyDue.missed! })}
-          />
-        )}
-        {weeklyDue.current && (
-          <CheckRow
-            label={`Weekly reserve — ${weekLabel(weeklyDue.current)}`}
-            detail={
-              weeklyDue.isSunday
-                ? 'Due today — one question about the week you just lived'
-                : `Due Sunday ${formatShort(weeklyDue.dueOn)} — you can answer early`
-            }
-            done={false}
-            onClick={() => setSheet({ k: 'weekly', week: weeklyDue.current! })}
-          />
-        )}
-        {anchorDue && protocol && (
-          <CheckRow
-            label="Objective anchor"
-            detail={
-              lastAnchor
-                ? `Last measured ${daysBetween(lastAnchor.date, date)} days ago — a check on whether "hard" still means what it did`
-                : 'Every three months. Set the first measurement.'
-            }
-            done={false}
-            onClick={() => setSheet({ k: 'anchor' })}
-          />
-        )}
-        {yesterdaysSession && (
-          <CheckRow
-            label="Yesterday's session cost"
-            detail={`${EXERCISE_KINDS.find((k) => k.kind === yesterdaysSession.kind)?.label} · ${formatDuration(yesterdaysSession.durationMin)}`}
-            done={false}
-            onClick={() => setSheet({ k: 'recovery', id: yesterdaysSession.id })}
-          />
-        )}
-      </Card>
+          {isToday && targetDue.current && (
+            <CheckRow
+              label={`Intensity target — ${weekLabel(targetDue.current)}`}
+              detail={state.weeklyTargets.length ? 'Carry last week forward, or raise it' : 'Five lifts — this first one becomes your baseline'}
+              done={false}
+              onClick={() => setSheet({ k: 'target', week: targetDue.current! })}
+            />
+          )}
+          {isToday && targetDue.set && (
+            <CheckRow
+              label={`Intensity target — ${weekLabel(targetDue.set.weekStart)}`}
+              detail={targetSummary(state.lifts, targetDue.set)}
+              done
+              onClick={() => setSheet({ k: 'target', week: targetDue.set!.weekStart })}
+            />
+          )}
+          {isToday && targetDue.missed && (
+            <CheckRow
+              label={`Intensity target — ${weekLabel(targetDue.missed)}`}
+              detail="Last week never had a target set"
+              done={false}
+              onClick={() => setSheet({ k: 'target', week: targetDue.missed! })}
+            />
+          )}
+          {isToday && weeklyDue.missed && (
+            <CheckRow
+              label={`Weekly reserve — ${weekLabel(weeklyDue.missed)}`}
+              detail="Last week was never rated"
+              done={false}
+              onClick={() => setSheet({ k: 'weekly', week: weeklyDue.missed! })}
+            />
+          )}
+          {isToday && weeklyDue.current && (
+            <CheckRow
+              label={`Weekly reserve — ${weekLabel(weeklyDue.current)}`}
+              detail={
+                weeklyDue.isSunday
+                  ? 'Due today — one question about the week you just lived'
+                  : `Due Sunday ${formatShort(weeklyDue.dueOn)} — you can answer early`
+              }
+              done={false}
+              onClick={() => setSheet({ k: 'weekly', week: weeklyDue.current! })}
+            />
+          )}
+          {isToday && anchorDue && protocol && (
+            <CheckRow
+              label="Objective anchor"
+              detail={
+                lastAnchor
+                  ? `Last measured ${daysBetween(lastAnchor.date, now)} days ago — a check on whether "hard" still means what it did`
+                  : 'Every three months. Set the first measurement.'
+              }
+              done={false}
+              onClick={() => setSheet({ k: 'anchor' })}
+            />
+          )}
+          {isToday && yesterdaysSession && (
+            <CheckRow
+              label="Yesterday's session cost"
+              detail={`${EXERCISE_KINDS.find((k) => k.kind === yesterdaysSession.kind)?.label} · ${formatDuration(yesterdaysSession.durationMin)}`}
+              done={false}
+              onClick={() => setSheet({ k: 'recovery', id: yesterdaysSession.id })}
+            />
+          )}
+        </Card>
       )}
 
       {/* -------------------------------------------------------- quick log */}
       {canEdit && (
-      <Card title="Log an event" desc="Only when it actually happens — these are unscheduled by nature.">
-        <div className="quick-grid three">
-          <button className="btn" onClick={() => setSheet({ k: 'workout' })}>Exercise</button>
-          <button className="btn" onClick={() => setSheet({ k: 'impulse' })}>Impulse</button>
-          <button className="btn" onClick={() => setSheet({ k: 'stress' })}>Stress event</button>
-        </div>
-        <TodayCounts />
-      </Card>
+        <Card
+          title="Log an event"
+          desc={isToday ? 'Only when it actually happens — these are unscheduled by nature.' : `Logged to ${formatDay(date)} unless you change the time.`}
+        >
+          <div className="quick-grid three">
+            <button className="btn" onClick={() => setSheet({ k: 'workout' })}>Exercise</button>
+            <button className="btn" onClick={() => setSheet({ k: 'impulse' })}>Impulse</button>
+            <button className="btn" onClick={() => setSheet({ k: 'stress' })}>Stress event</button>
+          </div>
+          <DayEvents date={date} onEdit={setSheet} />
+        </Card>
       )}
 
       {/* ----------------------------------------------------------- stages */}
@@ -258,24 +290,41 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
       ))}
 
       {/* ----------------------------------------------------------- sheets */}
-      <Sheet open={sheet?.k === 'morning'} title="Morning check-in" onClose={close}>
-        <MorningForm date={date} onDone={close} />
-      </Sheet>
-      <Sheet open={sheet?.k === 'evening'} title="End of work" onClose={close}>
-        <EveningForm date={date} onDone={close} />
-      </Sheet>
-      <Sheet open={sheet?.k === 'workout'} title="Log exercise" onClose={close}>
-        <WorkoutForm onDone={close} />
-      </Sheet>
-      <Sheet open={sheet?.k === 'impulse'} title="Log impulse" onClose={close}>
-        <ImpulseForm onDone={close} />
-      </Sheet>
-      <Sheet open={sheet?.k === 'stress'} title="Log stress event" onClose={close}>
-        <StressForm onDone={close} />
-      </Sheet>
-      <Sheet open={sheet?.k === 'focus'} title="Focus Point" onClose={close}>
-        <FocusPointForm onDone={close} />
-      </Sheet>
+      {sheet?.k === 'morning' && (
+        <Sheet open title={isToday ? 'Morning check-in' : `Morning · ${formatDay(date)}`} onClose={close}>
+          <MorningForm date={date} onDone={close} />
+        </Sheet>
+      )}
+      {sheet?.k === 'evening' && (
+        <Sheet open title={isToday ? 'End of work' : `End of work · ${formatDay(date)}`} onClose={close}>
+          <EveningForm date={date} onDone={close} />
+        </Sheet>
+      )}
+      {sheet?.k === 'workout' && (
+        <Sheet open key={`workout-${sheet.id ?? 'new'}`} title={eventTitle('exercise', sheet.id)} onClose={close}>
+          <WorkoutForm date={date} editId={sheet.id} onDone={close} />
+        </Sheet>
+      )}
+      {sheet?.k === 'impulse' && (
+        <Sheet
+          open
+          key={`impulse-${sheet.id ?? 'new'}`}
+          title={sheet.id && state.impulses.find((i) => i.id === sheet.id)?.open ? 'Finish impulse' : eventTitle('impulse', sheet.id)}
+          onClose={close}
+        >
+          <ImpulseForm date={date} editId={sheet.id} onDone={close} />
+        </Sheet>
+      )}
+      {sheet?.k === 'stress' && (
+        <Sheet open key={`stress-${sheet.id ?? 'new'}`} title={eventTitle('stress event', sheet.id)} onClose={close}>
+          <StressForm date={date} editId={sheet.id} onDone={close} />
+        </Sheet>
+      )}
+      {sheet?.k === 'focus' && (
+        <Sheet open title="Focus Point" onClose={close}>
+          <FocusPointForm onDone={close} />
+        </Sheet>
+      )}
       {sheet?.k === 'weekly' && (
         <Sheet open title={`Week ${weekLabel(sheet.week)}`} onClose={close}>
           <WeeklyForm weekStart={sheet.week} onDone={close} />
@@ -297,6 +346,155 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
 }
 
 /* ------------------------------------------------------------ sub-pieces */
+
+/**
+ * Which day the check-ins and events below belong to. Tapping the date opens the
+ * native picker; the arrows step a day at a time. Tracking start and today are
+ * the limits, because data outside them would not reach any metric.
+ */
+function DayBar({ date, min, onChange }: { date: string; min: string; onChange: (d: string) => void }) {
+  const now = today()
+  const isToday = date === now
+  return (
+    <>
+      <div className="daybar">
+        <button className="btn small ghost" disabled={date <= min} onClick={() => onChange(addDays(date, -1))} aria-label="Previous day">
+          ‹
+        </button>
+        <div className={`daybar-label${isToday ? '' : ' past'}`}>
+          <span>{isToday ? `Today · ${formatDay(date)}` : formatDay(date)}</span>
+          <input
+            type="date"
+            value={date}
+            min={min}
+            max={now}
+            aria-label="Choose a day"
+            onClick={(e) => {
+              try {
+                e.currentTarget.showPicker()
+              } catch {
+                /* a tap on the input opens the native picker anyway */
+              }
+            }}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v && v >= min && v <= now) onChange(v)
+            }}
+          />
+        </div>
+        <button className="btn small ghost" disabled={isToday} onClick={() => onChange(addDays(date, 1))} aria-label="Next day">
+          ›
+        </button>
+      </div>
+      {!isToday && (
+        <p className="tiny muted daybar-sub">
+          Viewing a past day.{' '}
+          <button className="linkbtn" onClick={() => onChange(now)}>Back to today</button>
+        </p>
+      )}
+    </>
+  )
+}
+
+/** Urges logged at their start and not yet finished. Global, so a forgotten one from yesterday still surfaces. */
+function OpenImpulses({ onFinish }: { onFinish: (id: string) => void }) {
+  const { state } = useApp()
+  const [, tick] = useState(0)
+  useEffect(() => {
+    // Keep "12 min ago" honest while the screen is open.
+    const t = window.setInterval(() => tick((x) => x + 1), 60_000)
+    return () => window.clearInterval(t)
+  }, [])
+
+  const open = state.impulses.filter((i) => i.open).sort((a, b) => a.at.localeCompare(b.at))
+  if (!open.length) return null
+  return (
+    <Card
+      className="open-impulse"
+      title={open.length === 1 ? 'Urge in progress' : `${open.length} urges in progress`}
+      desc="Finish it once it is over — the urge duration is filled in from the time that has passed."
+    >
+      {open.map((i) => {
+        const mins = Math.max(1, Math.round((Date.now() - new Date(i.at).getTime()) / 60_000))
+        return (
+          <div key={i.id} className="row between" style={{ padding: '6px 0' }}>
+            <div>
+              <div className="small" style={{ fontWeight: 600 }}>{IMPULSE_KINDS.find((k) => k.kind === i.kind)?.label ?? i.kind}</div>
+              <div className="tiny muted">
+                started {i.date === today() ? '' : `${formatShort(i.date)} `}{formatTime(i.at)} · {formatDuration(mins)} ago
+              </div>
+            </div>
+            <button className="btn small primary" onClick={() => onFinish(i.id)}>It's over</button>
+          </div>
+        )
+      })}
+    </Card>
+  )
+}
+
+type DayItem = { at: string; key: string; title: string; detail: string; open?: boolean; sheet: SheetKind }
+
+/** Everything logged on the viewed day, oldest first. Tap any line to edit it. */
+function DayEvents({ date, onEdit }: { date: string; onEdit: (s: SheetKind) => void }) {
+  const { state } = useApp()
+
+  const items: DayItem[] = [
+    ...state.workouts
+      .filter((w) => w.date === date)
+      .map((w): DayItem => ({
+        at: w.at,
+        key: `w-${w.id}`,
+        title: `${EXERCISE_KINDS.find((k) => k.kind === w.kind)?.label ?? w.kind} · ${formatDuration(w.durationMin)}`,
+        detail: `RPE ${w.rpe} · reserve after ${w.reserveAfter}`,
+        sheet: { k: 'workout', id: w.id },
+      })),
+    ...state.impulses
+      .filter((i) => i.date === date)
+      .map((i): DayItem => ({
+        at: i.at,
+        key: `i-${i.id}`,
+        title: `${IMPULSE_KINDS.find((k) => k.kind === i.kind)?.label ?? i.kind}${i.intensity != null ? ` · ${i.intensity}/10` : ''}`,
+        detail: i.open
+          ? 'still open — tap to finish'
+          : `urge ${formatUrge(i.urgeMinutes)} · lost ${formatDuration(i.disruptionMinutes ?? 0)} · ${IMPULSE_OUTCOMES.find((o) => o.value === i.outcome)?.label.toLowerCase() ?? ''}`,
+        open: i.open,
+        sheet: { k: 'impulse', id: i.id },
+      })),
+    ...state.stress
+      .filter((e) => e.date === date)
+      .map((e): DayItem => ({
+        at: e.at,
+        key: `s-${e.id}`,
+        title: e.label || 'Stress event',
+        detail: `intensity ${e.intensity} · impact ${e.functionalImpact} · ${formatDuration(e.recoveryMinutes)} to baseline`,
+        sheet: { k: 'stress', id: e.id },
+      })),
+  ].sort((a, b) => a.at.localeCompare(b.at))
+
+  if (!items.length) {
+    return (
+      <p className="tiny muted" style={{ margin: '10px 0 0' }}>
+        Nothing logged {date === today() ? 'today' : 'on this day'} yet.
+      </p>
+    )
+  }
+  return (
+    <div style={{ marginTop: 12 }}>
+      {items.map((it) => (
+        <button key={it.key} className="event-row" onClick={() => onEdit(it.sheet)}>
+          <span className="when">{formatTime(it.at)}</span>
+          <span className="what">
+            {it.title}
+            <small>{it.detail}</small>
+          </span>
+          <span className={it.open ? 'small' : 'muted small'} style={it.open ? { color: 'var(--warning)' } : undefined}>
+            {it.open ? 'finish' : 'edit'}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function PingCard({ label, onAnswer, onCancel }: { label: string; onAnswer: (s: SampleState) => void; onCancel?: () => void }) {
   return (
@@ -395,7 +593,7 @@ function FirstRun() {
       <p className="tiny muted" style={{ margin: 0 }}>
         Start with two things: name a <strong style={{ color: 'var(--ink-2)' }}>Focus Point</strong> — the one problem
         you want your mind returning to — then do the morning check-in. Everything else appears as it becomes
-        relevant. Nothing leaves this device; back up from Data when you have a few weeks in.
+        relevant.
       </p>
     </Card>
   )
@@ -423,22 +621,6 @@ function CheckRow({ label, detail, done, onClick }: { label: string; detail: str
       </span>
       <span className="muted small">{done ? 'edit' : '›'}</span>
     </button>
-  )
-}
-
-function TodayCounts() {
-  const { state } = useApp()
-  const date = today()
-  const w = state.workouts.filter((x) => x.date === date).length
-  const i = state.impulses.filter((x) => x.date === date)
-  const s = state.stress.filter((x) => x.date === date).length
-  if (!w && !i.length && !s) return null
-  const lost = i.reduce((a, x) => a + x.disruptionMinutes, 0)
-  return (
-    <p className="tiny muted" style={{ margin: '10px 0 0' }}>
-      Today: {w} session{w === 1 ? '' : 's'} · {i.length} impulse{i.length === 1 ? '' : 's'}
-      {lost > 0 && ` (${formatDuration(lost)} lost)`} · {s} stress event{s === 1 ? '' : 's'}
-    </p>
   )
 }
 

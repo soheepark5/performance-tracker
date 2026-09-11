@@ -3,7 +3,7 @@ import { Card, Chips, NumberField, Segmented, Sheet, TextField, Tile } from '../
 import { CloudCard } from '../components/CloudCard'
 import { DOMAINS, DOMAIN_META, STAGE_MODEL } from '../config/stages'
 import { METRICS, formatMetric } from '../config/metrics'
-import { EXERCISE_KINDS, IMPULSE_KINDS } from '../config/taxonomy'
+import { EXERCISE_KINDS, IMPULSE_KINDS, formatUrge } from '../config/taxonomy'
 import { SAMPLE_OPTIONS } from '../config/scales'
 import { slotLabel } from '../domain/pings'
 import { formatDuration, formatShort, formatTime, today } from '../domain/date'
@@ -439,8 +439,10 @@ function RecordTab() {
           <RecordList
             rows={[...state.impulses].reverse().map((i) => ({
               id: i.id,
-              title: `${IMPULSE_KINDS.find((k) => k.kind === i.kind)?.label ?? i.kind} · intensity ${i.intensity}`,
-              meta: `${formatShort(i.date)} · urge ${formatDuration(i.urgeMinutes)} · lost ${formatDuration(i.disruptionMinutes)} · ${i.outcome}`,
+              title: `${IMPULSE_KINDS.find((k) => k.kind === i.kind)?.label ?? i.kind}${i.intensity != null ? ` · intensity ${i.intensity}` : ''}`,
+              meta: i.open
+                ? `${formatShort(i.date)} ${formatTime(i.at)} · still open, finish it from Today`
+                : `${formatShort(i.date)} · urge ${formatUrge(i.urgeMinutes)} · lost ${formatDuration(i.disruptionMinutes ?? 0)} · ${i.outcome ?? ''}`,
             }))}
             onDelete={canEdit ? actions.deleteImpulse : undefined}
           />

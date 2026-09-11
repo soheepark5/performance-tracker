@@ -325,11 +325,16 @@ export function computeMetrics(state: AppState, asOf: ISODate = todayISO()): Met
     const w = win('strongImpulsesPerWeek')
     const imp = state.impulses.filter((i) => inWindow(i.date, w))
     const weeks = w.observedDays / 7
-    put('strongImpulsesPerWeek', imp.filter((i) => i.intensity >= 7).length / weeks, w.observedDays)
-    put('disruptionPerDay', sum(imp.map((i) => i.disruptionMinutes)) / w.observedDays, w.observedDays)
-    put('impulseActedRate', imp.length ? (imp.filter((i) => i.outcome === 'acted').length / imp.length) * 100 : null, imp.length)
-    put('urgeMinutesAvg', mean(imp.map((i) => i.urgeMinutes)), imp.length)
-    put('impulseIntensityAvg', mean(imp.map((i) => i.intensity)), imp.length)
+    put('strongImpulsesPerWeek', imp.filter((i) => (i.intensity ?? 0) >= 7).length / weeks, w.observedDays)
+    put('disruptionPerDay', sum(imp.map((i) => i.disruptionMinutes ?? 0)) / w.observedDays, w.observedDays)
+    // An impulse logged at its start has no outcome or duration yet. Leave it out
+    // of these rather than count a guess; it joins them once it is finished.
+    const closed = imp.filter((i) => !i.open)
+    put('impulseActedRate', closed.length ? (closed.filter((i) => i.outcome === 'acted').length / closed.length) * 100 : null, closed.length)
+    const urges = closed.map((i) => i.urgeMinutes).filter((x): x is number => x != null)
+    put('urgeMinutesAvg', mean(urges), urges.length)
+    const intensities = imp.map((i) => i.intensity).filter((x): x is number => x != null)
+    put('impulseIntensityAvg', mean(intensities), intensities.length)
   }
 
   return out

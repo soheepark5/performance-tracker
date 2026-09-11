@@ -1,5 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { SCALES, type ScaleAnchors, type ScaleKey } from '../config/scales'
+import { useBackHandler } from './backstack'
 
 /* -------------------------------------------------------------------- card */
 
@@ -199,6 +200,9 @@ export function Sheet({ open, title, onClose, children, footer }: {
       document.body.style.overflow = prev
     }
   }, [open, onClose])
+
+  // The phone's back button closes the sheet instead of leaving the app.
+  useBackHandler(open, onClose)
 
   if (!open) return null
   return (

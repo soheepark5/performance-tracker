@@ -203,16 +203,24 @@ export type ImpulseOutcome = 'resisted' | 'delayed' | 'partial' | 'acted'
 
 export interface ImpulseEvent {
   id: string
+  /** when the urge started */
   at: ISOStamp
   date: ISODate
   kind: ImpulseKind
   trigger?: string
-  intensity: number // 1-10
+  /**
+   * An impulse can be logged the moment it starts and finished once it is over.
+   * While `open` is true only the onset is known (kind, time, perhaps intensity)
+   * and the fields below are filled in when it closes. Metrics that need them
+   * skip open impulses rather than inventing values.
+   */
+  open?: boolean
+  intensity?: number // 1-10
   /** how long the urge was present, real minutes */
-  urgeMinutes: number
+  urgeMinutes?: number
   /** how much work time was actually lost, real minutes -- deliberately separate */
-  disruptionMinutes: number
-  outcome: ImpulseOutcome
+  disruptionMinutes?: number
+  outcome?: ImpulseOutcome
   note?: string
 }
 

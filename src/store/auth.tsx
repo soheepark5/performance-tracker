@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { cloudEnabled, supabase } from './supabase'
+import { clearAllDrafts } from '../components/draft'
 
 /**
  * Email and password authentication.
@@ -103,7 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
 
       async signOut() {
-        // Local cache is deliberately left alone: signing out is not erasing.
+        // The record cache is deliberately left alone: signing out is not erasing.
+        // Half-written drafts are cleared, so the next person here never sees them.
+        clearAllDrafts()
         await supabase?.auth.signOut()
       },
     }),
