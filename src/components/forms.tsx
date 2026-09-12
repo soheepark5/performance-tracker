@@ -110,6 +110,19 @@ export function defaultWhen(date: string): string {
   return date === today() ? toLocalInput(new Date()) : `${date}T12:00`
 }
 
+/**
+ * An existing event's time as its form shows it. The day shown must be the day
+ * the event is listed under: if the stored day and the local day of the
+ * timestamp ever disagree (a timezone change, or data written elsewhere), keep
+ * the stored day and take only the time from the timestamp. Saving recomputes
+ * the day from this field, so without it an edit could silently move an event
+ * to another day.
+ */
+function whenOf(e: { at: string; date: string }): string {
+  const local = toLocalInput(new Date(e.at))
+  return local.slice(0, 10) === e.date ? local : `${e.date}T${local.slice(11)}`
+}
+
 const isFuture = (when: string) => fromLocalInput(when).getTime() > Date.now() + 60_000
 
 function FutureWarning({ when }: { when: string }) {
@@ -172,6 +185,9 @@ export function MorningForm({ date, onDone }: { date: string; onDone: () => void
             onDone()
           }}
         />
+        {existing && (
+          <DeleteButton onDelete={() => { actions.deleteMorning(date); draft.clear(); onDone() }} />
+        )}
       </div>
     </>
   )
@@ -249,6 +265,9 @@ export function EveningForm({ date, onDone }: { date: string; onDone: () => void
             onDone()
           }}
         />
+        {existing && (
+          <DeleteButton onDelete={() => { actions.deleteEvening(date); draft.clear(); onDone() }} />
+        )}
       </div>
     </>
   )
@@ -262,6 +281,7 @@ type WorkoutDraft = {
   duration: number | null
   rpe: number | null
   reserve: number | null
+  recoveryCost: number | null
   metrics: WorkoutMetrics
   prescribed: boolean
   note: string
@@ -272,10 +292,11 @@ export function WorkoutForm({ date, editId, onDone }: { date: string; editId?: s
   const existing = editId ? state.workouts.find((w) => w.id === editId) : undefined
   const draft = useDraft<WorkoutDraft>(editId ? `workout:${editId}` : 'workout:new', () => ({
     kind: existing?.kind ?? 'run',
-    when: existing ? toLocalInput(new Date(existing.at)) : defaultWhen(date),
+    when: existing ? whenOf(existing) : defaultWhen(date),
     duration: existing?.durationMin ?? null,
     rpe: existing?.rpe ?? null,
     reserve: existing?.reserveAfter ?? null,
+    recoveryCost: existing?.recoveryCost ?? null,
     metrics: existing?.metrics ?? {},
     prescribed: existing?.prescribed ?? true,
     note: existing?.note ?? '',
@@ -283,6 +304,10 @@ export function WorkoutForm({ date, editId, onDone }: { date: string; editId?: s
   const f = draft.value
 
   const def = EXERCISE_KINDS.find((k) => k.kind === f.kind)!
+  // A next-day cost only exists once the next day has started, so it is offered
+  // for sessions dated before today: editing an older one, or backfilling. For a
+  // session logged today, Today asks about it tomorrow instead.
+  const sessionIsPast = toISODate(fromLocalInput(f.when)) < today()
   const setMetric = (key: MetricField, v: number | string | null) =>
     draft.set({ metrics: { ...f.metrics, [key]: v === null || v === '' ? undefined : v } })
 
@@ -318,6 +343,16 @@ export function WorkoutForm({ date, editId, onDone }: { date: string; editId?: s
       )}
       <ScaleInput scale="rpe" value={f.rpe} onChange={(rpe) => draft.set({ rpe })} min={1} />
       <ScaleInput scale="reserveAfter" value={f.reserve} onChange={(reserve) => draft.set({ reserve })} />
+      {sessionIsPast && (
+        <>
+          <ScaleInput scale="nextDayCost" value={f.recoveryCost} onChange={(recoveryCost) => draft.set({ recoveryCost })} />
+          {f.recoveryCost != null && (
+            <button className="linkbtn" style={{ margin: '-4px 0 10px' }} onClick={() => draft.set({ recoveryCost: null })}>
+              Clear next-day cost
+            </button>
+          )}
+        </>
+      )}
 
       {def.fields.length > 0 && (
         <>
@@ -352,6 +387,8 @@ export function WorkoutForm({ date, editId, onDone }: { date: string; editId?: s
               prescribed: f.kind === 'strength' ? f.prescribed : undefined,
               metrics: f.metrics,
               note: f.note || undefined,
+              // Hidden for a session dated today, so leave whatever was there untouched.
+              recoveryCost: sessionIsPast ? f.recoveryCost ?? undefined : existing?.recoveryCost,
             }
             if (existing) actions.updateWorkout(existing.id, payload)
             else actions.addWorkout(payload)
@@ -385,7 +422,7 @@ export function StressForm({ date, editId, onDone }: { date: string; editId?: st
   const existing = editId ? state.stress.find((e) => e.id === editId) : undefined
   const draft = useDraft<StressDraft>(editId ? `stress:${editId}` : 'stress:new', () => ({
     label: existing?.label ?? '',
-    when: existing ? toLocalInput(new Date(existing.at)) : defaultWhen(date),
+    when: existing ? whenOf(existing) : defaultWhen(date),
     intensity: existing?.intensity ?? null,
     impact: existing?.functionalImpact ?? null,
     reaction: existing?.reaction ?? null,
@@ -474,7 +511,7 @@ export function ImpulseForm({ date, editId, onDone }: { date: string; editId?: s
 
   const draft = useDraft<ImpulseDraft>(editId ? `impulse:${editId}` : 'impulse:new', () => ({
     kind: existing?.kind ?? null,
-    when: existing ? toLocalInput(new Date(existing.at)) : defaultWhen(date),
+    when: existing ? whenOf(existing) : defaultWhen(date),
     intensity: existing?.intensity ?? null,
     trigger: existing?.trigger ?? '',
     // Finishing an open urge: the time since it started is the best first guess.

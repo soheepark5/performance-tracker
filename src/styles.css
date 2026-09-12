@@ -77,7 +77,7 @@ button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 
 /* Numbers are the point of this app, so they wear the display face. */
-.hero, .tile .v, .scale-val, .nums, .stage-mark, table.data, .scale-ticks span, .pill {
+.hero, .tile .v, .scale-val, .nums, .stage-num, .stage-count, table.data, .scale-ticks span, .pill {
   font-family: var(--font-display);
 }
 
@@ -406,21 +406,6 @@ hr.rule { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 
-.stage-marks { display: flex; gap: 5px; margin: 10px 0 8px; }
-.stage-mark {
-  flex: none;
-  width: 32px;
-  height: 28px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: var(--muted);
-  background: var(--surface-2);
-}
-.stage-mark.on { border-width: 2px; color: var(--ink); font-weight: 700; }
 
 .req { display: flex; gap: 10px; align-items: flex-start; padding: 11px 0; border-top: 1px solid var(--line); }
 .req:first-of-type { border-top: 0; }
@@ -619,3 +604,88 @@ table.data th {
   color: var(--ink-2);
   margin-bottom: 12px;
 }
+
+/* --------------------------------------------------------- stage progress */
+
+.stage-progress { --seg-color: var(--accent); }
+
+.domain-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.stage-now { display: flex; align-items: flex-end; gap: 12px; margin: 10px 0 12px; }
+.stage-num {
+  font-weight: 600;
+  font-size: 42px;
+  line-height: 0.82;
+  letter-spacing: -0.04em;
+}
+.stage-progress.hero .stage-num { font-size: 68px; }
+.stage-now-text { display: flex; flex-direction: column; gap: 3px; padding-bottom: 1px; }
+.stage-kicker { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.stage-name { font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.2; }
+.stage-progress.hero .stage-name { font-size: 18px; }
+
+.stage-headline {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 10px;
+  text-wrap: balance;
+}
+
+.stage-next { font-size: 12.5px; color: var(--ink-2); gap: 10px; align-items: baseline; }
+.stage-next strong { color: var(--ink); font-weight: 600; }
+.stage-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.stage-count strong { color: var(--ink); font-size: 15px; }
+
+/* One segment per requirement of the next stage: never an averaged bar. */
+.req-bar { display: flex; gap: 3px; margin: 8px 0 10px; }
+.req-seg {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.req-seg > i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--seg-color);
+  transform-origin: left center;
+  animation: seg-fill 0.7s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.req-seg.partial > i { opacity: 0.5; }
+.req-seg.pending { background: transparent; border: 1px dashed var(--line-strong); }
+@keyframes seg-fill { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .req-seg > i { animation: none; } }
+
+.stage-line { font-size: 12.5px; color: var(--ink-2); margin: 0; line-height: 1.5; }
+.stage-line + .stage-line { margin-top: 4px; }
+.stage-line .k { color: var(--muted); }
+.stage-line strong { color: var(--ink); font-weight: 600; }
+.stage-line .nums { color: var(--ink-2); }
+.stage-line.top { color: var(--accent); font-weight: 600; }
+
+/* A domain in a list of domains: the whole block is the tap target. */
+.stage-pick {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+  text-align: left;
+  color: inherit;
+}
+.stage-pick:first-of-type { border-top: 0; padding-top: 2px; }
+.stage-pick:last-of-type { padding-bottom: 2px; }

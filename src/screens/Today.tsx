@@ -6,7 +6,7 @@ import {
   AnchorForm, EveningForm, FocusPointForm, ImpulseForm, MorningForm, StressForm,
   WeeklyForm, WeeklyTargetForm, WorkoutForm,
 } from '../components/forms'
-import { BottleneckLine, DOMAIN_COLOR, StageHeadline } from '../components/stage'
+import { DOMAIN_COLOR, StageProgress } from '../components/stage'
 import { Card, Empty, ScaleInput, Sheet } from '../components/ui'
 import {
   addDays, daysBetween, formatDay, formatDuration, formatShort, formatTime, fromISODate, today, weekStart,
@@ -276,18 +276,13 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
       )}
 
       {/* ----------------------------------------------------------- stages */}
-      {DOMAINS.map((dom) => (
-        <Card key={dom} className="tight">
-          <button
-            onClick={() => goToStages(dom)}
-            style={{ background: 'none', border: 0, padding: 0, width: '100%', textAlign: 'left' }}
-          >
-            <StageHeadline ev={evals[dom]} />
-            <p className="tiny muted" style={{ margin: '4px 0 0' }}>{DOMAIN_META[dom].question}</p>
-            <BottleneckLine ev={evals[dom]} />
+      <Card>
+        {DOMAINS.map((dom) => (
+          <button key={dom} className="stage-pick" onClick={() => goToStages(dom)}>
+            <StageProgress ev={evals[dom]} />
           </button>
-        </Card>
-      ))}
+        ))}
+      </Card>
 
       {/* ----------------------------------------------------------- sheets */}
       {sheet?.k === 'morning' && (

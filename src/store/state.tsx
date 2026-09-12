@@ -62,6 +62,10 @@ function makeActions(update: (fn: (s: AppState) => AppState) => void) {
     saveEvening: (date: ISODate, entry: Omit<EveningEntry, 'at'>) =>
       patchDay(date, (d) => ({ ...d, evening: { ...entry, at: new Date().toISOString() } })),
 
+    deleteMorning: (date: ISODate) => patchDay(date, ({ morning: _, ...d }) => d),
+
+    deleteEvening: (date: ISODate) => patchDay(date, ({ evening: _, ...d }) => d),
+
     addSample: (date: ISODate, sample: Omit<Sample, 'id' | 'at'>) =>
       patchDay(date, (d) => ({ ...d, samples: [...d.samples, { ...sample, id: uid(), at: new Date().toISOString() }] })),
 

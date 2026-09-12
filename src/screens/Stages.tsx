@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DOMAINS, DOMAIN_META, MAX_STAGE, STAGE_NAMES } from '../config/stages'
-import { DOMAIN_COLOR, NextStageList, Requirement, StageMarker } from '../components/stage'
+import { NextStageList, Requirement, StageProgress } from '../components/stage'
 import { Card, Segmented } from '../components/ui'
 import { calibrationProgress, isCalibrating } from '../domain/stages'
 import { formatShort } from '../domain/date'
@@ -23,34 +23,11 @@ export function Stages({ domain, setDomain }: { domain: Domain; setDomain: (d: D
     <>
       {/* --------------------------------------------- sustainable performance */}
       <Card title="Sustainable performance">
-        <div className="stack" style={{ gap: 14 }}>
-          {DOMAINS.map((d) => {
-            const e = evals[d]
-            return (
-              <button
-                key={d}
-                onClick={() => setDomain(d)}
-                style={{ background: 'none', border: 0, padding: 0, textAlign: 'left', width: '100%' }}
-              >
-                <div className="row between">
-                  <div className="row" style={{ gap: 8 }}>
-                    <span className="dot" style={{ background: DOMAIN_COLOR[d] }} />
-                    <strong style={{ fontSize: 14 }}>{DOMAIN_META[d].label}</strong>
-                  </div>
-                  <span className="small">
-                    <strong>Stage {e.currentStage}</strong> <span className="muted">{e.currentName}</span>
-                  </span>
-                </div>
-                <StageMarker level={e.currentStage} color={DOMAIN_COLOR[d]} />
-                <div className="tiny muted">
-                  {e.bottleneck
-                    ? <>Blocked by {e.bottleneck.metric.label}: {e.bottleneck.valueText} → {e.bottleneck.targetText}</>
-                    : e.next ? 'Waiting on data' : 'Top stage held'}
-                </div>
-              </button>
-            )
-          })}
-        </div>
+        {DOMAINS.map((d) => (
+          <button key={d} className="stage-pick" onClick={() => setDomain(d)}>
+            <StageProgress ev={evals[d]} />
+          </button>
+        ))}
         {calibrating && (
           <p className="tiny muted" style={{ margin: '14px 0 0' }}>
             Provisional — thresholds are first guesses until about {formatShort(cal.endsOn)} (calibration week {cal.week} of {cal.total}).
@@ -58,22 +35,19 @@ export function Stages({ domain, setDomain }: { domain: Domain; setDomain: (d: D
         )}
       </Card>
 
-      <Segmented
-        options={DOMAINS.map((d) => ({ value: d, label: DOMAIN_META[d].label }))}
-        value={domain}
-        onChange={(v) => setDomain(v as Domain)}
-        ariaLabel="Domain"
-      />
+      <div style={{ marginBottom: 12 }}>
+        <Segmented
+          options={DOMAINS.map((d) => ({ value: d, label: DOMAIN_META[d].label }))}
+          value={domain}
+          onChange={(v) => setDomain(v as Domain)}
+          ariaLabel="Domain"
+        />
+      </div>
 
       {/* ------------------------------------------------------- the detail */}
-      <Card
-        className="tight"
-        title={`${DOMAIN_META[domain].label} — Stage ${ev.currentStage}`}
-        right={ev.provisional ? <span className="pill">provisional</span> : null}
-      >
-        <StageMarker level={ev.currentStage} color={DOMAIN_COLOR[domain]} />
-        <p className="small muted" style={{ margin: '0 0 2px' }}>{ev.currentName}</p>
-        <p className="tiny muted" style={{ margin: 0 }}>{DOMAIN_META[domain].question}</p>
+      <Card>
+        <StageProgress ev={ev} size="hero" />
+        <p className="tiny muted" style={{ margin: '14px 0 0' }}>{DOMAIN_META[domain].question}</p>
       </Card>
 
       <Card title="To reach the next stage" desc="Every requirement has to be met. One strong number does not buy a weak one.">

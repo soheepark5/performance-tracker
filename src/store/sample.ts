@@ -9,6 +9,16 @@ import { createInitialState, uid } from './storage'
  * the same "erase" control. Not used anywhere in normal operation.
  */
 
+/**
+ * A timestamp at a local wall-clock time on `date`. Sample events used fixed UTC
+ * stamps, which east of UTC land on the following local day and so disagree
+ * with the day they are filed under.
+ */
+const localAt = (date: string, hh: number, mm = 0) => {
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(y, m - 1, d, hh, mm).toISOString()
+}
+
 function mulberry(seed: number) {
   return () => {
     seed |= 0
@@ -48,7 +58,7 @@ export function makeSampleState(weeks = 12): AppState {
       date,
       samples: [],
       morning: {
-        at: `${date}T08:10:00.000Z`,
+        at: localAt(date, 8, 10),
         clarity: Math.round(clarityAm),
         emotionalBaseline: Math.round(baseline),
         sleepHours: Math.round((6.6 + p * 0.6 + noise(0.8)) * 2) / 2,
@@ -61,12 +71,12 @@ export function makeSampleState(weeks = 12): AppState {
       const r = rnd()
       const bias = 0.28 + p * 0.34 // improving attention over time
       const idx = r < bias ? 0 : r < bias + 0.24 ? 1 : r < bias + 0.42 ? 2 : r < bias + 0.55 ? 3 : 4
-      day.samples.push({ id: uid(), at: `${date}T12:00:00.000Z`, slot, state: sampleStates[Math.min(4, idx)] })
+      day.samples.push({ id: uid(), at: localAt(date, 12, 0), slot, state: sampleStates[Math.min(4, idx)] })
     }
 
     if (rnd() > 0.1) {
       day.evening = {
-        at: `${date}T19:00:00.000Z`,
+        at: localAt(date, 19, 0),
         clarity: Math.round(clarityPm),
         coverageReported: Math.round(clamp(38 + p * 34 + noise(12), 0, 100) / 10) * 10,
         fpContinuity: Math.round(clamp(3.6 + p * 3.2 + noise(1.3), 0, 10)),
@@ -86,7 +96,7 @@ export function makeSampleState(weeks = 12): AppState {
       s.workouts.push({
         id: uid(),
         date,
-        at: `${date}T18:00:00.000Z`,
+        at: localAt(date, 18, 0),
         kind,
         durationMin,
         rpe,
@@ -107,7 +117,7 @@ export function makeSampleState(weeks = 12): AppState {
       s.impulses.push({
         id: uid(),
         date,
-        at: `${date}T15:00:00.000Z`,
+        at: localAt(date, 15, 0),
         kind: kinds[Math.floor(rnd() * kinds.length)],
         intensity,
         urgeMinutes: urge,
@@ -122,7 +132,7 @@ export function makeSampleState(weeks = 12): AppState {
       s.stress.push({
         id: uid(),
         date,
-        at: `${date}T14:00:00.000Z`,
+        at: localAt(date, 14, 0),
         label: 'Difficult conversation',
         intensity,
         functionalImpact: Math.round(clamp(intensity * (0.85 - p * 0.35) + noise(1.2), 0, 10)),
@@ -138,7 +148,7 @@ export function makeSampleState(weeks = 12): AppState {
     const p = w / weeks
     s.weekly.push({
       weekStart: ws,
-      at: `${ws}T20:00:00.000Z`,
+      at: localAt(ws, 20, 0),
       reserve: Math.round(clamp(4.0 + p * 2.8 + noise(1.1), 0, 10)),
     })
   }
@@ -150,7 +160,7 @@ export function makeSampleState(weeks = 12): AppState {
     const grow = 1 + p * 0.42
     s.weeklyTargets.push({
       weekStart: ws,
-      at: `${ws}T08:00:00.000Z`,
+      at: localAt(ws, 8, 0),
       targets: {
         lat_pulldown: { sets: 3, perSet: 10, restSec: Math.round(90 - p * 20), loadKg: Math.round(40 * grow / 2.5) * 2.5 },
         leg_press: { sets: 4, perSet: 10, restSec: Math.round(120 - p * 30), loadKg: Math.round(90 * grow / 5) * 5 },
@@ -168,7 +178,7 @@ export function makeSampleState(weeks = 12): AppState {
     s.anchors.push({
       id: uid(),
       date,
-      at: `${date}T09:00:00.000Z`,
+      at: localAt(date, 9, 0),
       protocolId: DEFAULT_ANCHOR.id,
       values: {
         restingHr: Math.round(60 - p * 6 + noise(2)),

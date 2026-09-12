@@ -81,6 +81,12 @@ export const SCALES = {
     anchors: { 0: 'Nothing at all.', 3: 'Slight heaviness.', 5: 'Noticeable, worked around it.', 8: 'Dominated the day.', 10: 'Wrote the day off.' },
     invertColour: true,
   },
+  nextDayCost: {
+    question: 'Next-day cost',
+    hint: 'Fatigue this session carried into the following day. Leave it unset if you do not remember.',
+    anchors: { 0: 'Nothing at all.', 3: 'Slight heaviness.', 5: 'Noticeable, worked around it.', 8: 'Dominated the day.', 10: 'Wrote the day off.' },
+    invertColour: true,
+  },
   fpContinuity: {
     question: 'Focus Point continuity',
     hint: 'How continuously the same problem stayed alive in your mind — including gaps, walks, meals.',
