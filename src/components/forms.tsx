@@ -1,14 +1,15 @@
 import { useState } from 'react'
-import { ENJOYMENT_OPTIONS } from '../config/scales'
+import { ENJOYMENT_OPTIONS, SAMPLE_OPTIONS } from '../config/scales'
 import {
   ALL_DAY_MINUTES, EXERCISE_KINDS, IMPULSE_KINDS, IMPULSE_OUTCOMES, METRIC_FIELD_META, STRESS_REACTIONS,
   type MetricField,
 } from '../config/taxonomy'
 import { formatShort, formatTime, fromLocalInput, toISODate, today, toLocalInput } from '../domain/date'
 import { dayCoverage } from '../domain/metrics'
+import { slotLabel } from '../domain/pings'
 import type {
   AnchorProtocol, EnjoymentLevel, ExerciseKind, ImpulseKind, ImpulseOutcome,
-  LiftTarget, StressReaction, WorkoutMetrics,
+  LiftTarget, SampleState, StressReaction, WorkoutMetrics,
 } from '../domain/types'
 import { useApp } from '../store/state'
 import { DraftNote, useDraft } from './draft'
@@ -137,6 +138,53 @@ function FutureWarning({ when }: { when: string }) {
 function elapsedMinutes(iso: string): number {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60_000)
   return Math.min(ALL_DAY_MINUTES, Math.max(1, min))
+}
+
+/* ---------------------------------------------------------------- sample */
+
+/**
+ * Correcting an answered attention sample. Only the answer can change: the time
+ * is when the question was answered, which is the moment being sampled.
+ */
+export function SampleForm({ date, id, onDone }: { date: string; id: string; onDone: () => void }) {
+  const { day, actions } = useApp()
+  const existing = day(date).samples.find((s) => s.id === id)
+  const [answer, setAnswer] = useState<SampleState | null>(existing?.state ?? null)
+  if (!existing) return <p className="small muted">This sample no longer exists.</p>
+
+  return (
+    <>
+      <p className="small muted" style={{ marginTop: 0 }}>
+        {slotLabel(existing.slot)} · answered {formatShort(date)} at {formatTime(existing.at)}
+      </p>
+      <div className="stack" role="radiogroup" aria-label="What was your mind on?" style={{ gap: 6 }}>
+        {SAMPLE_OPTIONS.map((o) => (
+          <button
+            key={o.state}
+            type="button"
+            role="radio"
+            aria-checked={answer === o.state}
+            className="answer"
+            onClick={() => setAnswer(o.state)}
+          >
+            <span>{o.label}</span>
+            <span className="tiny muted">{o.hint}</span>
+          </button>
+        ))}
+      </div>
+      <div className="sheet-actions">
+        <Save
+          label="Save changes"
+          disabled={!answer || answer === existing.state}
+          onSave={() => {
+            actions.updateSample(date, id, { state: answer! })
+            onDone()
+          }}
+        />
+        <DeleteButton onDelete={() => { actions.removeSample(date, id); onDone() }} />
+      </div>
+    </>
+  )
 }
 
 /* --------------------------------------------------------------- morning */

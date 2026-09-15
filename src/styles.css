@@ -573,6 +573,69 @@ table.data th {
 .event-row .what { flex: 1; font-size: 13.5px; }
 .event-row .what small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
 
+/* ------------------------------------------------------ attention samples */
+
+.ping-q { font-size: 15px; font-weight: 600; line-height: 1.3; }
+
+/* One answer to "what was your mind on?": a ping option, or a choice when editing. */
+.answer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.08s, border-color 0.15s, background 0.15s;
+}
+.answer .tiny { text-align: right; }
+.answer:hover { background: var(--surface-3); }
+.answer:active { transform: scale(0.98); border-color: var(--accent); background: var(--accent-wash); }
+.answer[aria-checked='true'] { border-color: var(--accent); background: var(--accent-wash); }
+.answer[aria-checked='true'] > span:first-child::before { content: '✓  '; color: var(--accent); font-weight: 700; }
+
+.saved-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--accent-wash);
+  border: 1px solid rgba(53, 224, 139, 0.35);
+  border-radius: 10px;
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--ink-2);
+  animation: strip-in 0.25s ease-out both;
+}
+.saved-strip strong { color: var(--ink); font-weight: 600; }
+.saved-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+@keyframes strip-in { from { opacity: 0; transform: translateY(-4px); } }
+
+.event-row.fresh { animation: row-flash 1.8s ease-out; }
+@keyframes row-flash { from { background: var(--accent-wash); } }
+@media (prefers-reduced-motion: reduce) {
+  .saved-strip, .event-row.fresh { animation: none; }
+}
+
 /* ---------------------------------------------------------- open impulses */
 
 .open-impulse { border-color: rgba(245, 181, 68, 0.45); }

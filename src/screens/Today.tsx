@@ -3,7 +3,7 @@ import { SAMPLE_OPTIONS } from '../config/scales'
 import { DOMAINS, DOMAIN_META } from '../config/stages'
 import { EXERCISE_KINDS, IMPULSE_KINDS, IMPULSE_OUTCOMES, formatUrge } from '../config/taxonomy'
 import {
-  AnchorForm, EveningForm, FocusPointForm, ImpulseForm, MorningForm, StressForm,
+  AnchorForm, EveningForm, FocusPointForm, ImpulseForm, MorningForm, SampleForm, StressForm,
   WeeklyForm, WeeklyTargetForm, WorkoutForm,
 } from '../components/forms'
 import { DOMAIN_COLOR, StageProgress } from '../components/stage'
@@ -11,7 +11,7 @@ import { Card, Empty, ScaleInput, Sheet } from '../components/ui'
 import {
   addDays, daysBetween, formatDay, formatDuration, formatShort, formatTime, fromISODate, today, weekStart,
 } from '../domain/date'
-import { duePings, nextPing, slotLabel } from '../domain/pings'
+import { duePings, nextPing, slotLabel, type DuePing, type PingSlot } from '../domain/pings'
 import { calibrationProgress, isCalibrating } from '../domain/stages'
 import { useApp } from '../store/state'
 import type { Domain, SampleState } from '../domain/types'
@@ -20,10 +20,10 @@ type SheetKind =
   | { k: 'morning' } | { k: 'evening' }
   | { k: 'workout'; id?: string } | { k: 'impulse'; id?: string } | { k: 'stress'; id?: string }
   | { k: 'weekly'; week: string } | { k: 'target'; week: string } | { k: 'anchor' } | { k: 'focus' }
-  | { k: 'recovery'; id: string }
+  | { k: 'recovery'; id: string } | { k: 'sample'; id: string; date: string }
 
 export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
-  const { state, day, evals, actions, activeFocusPoint, canEdit, sharedAsOf } = useApp()
+  const { state, day, evals, activeFocusPoint, canEdit, sharedAsOf } = useApp()
   const [sheet, setSheet] = useState<SheetKind | null>(null)
   const [extraPing, setExtraPing] = useState(false)
 
@@ -146,31 +146,17 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
         />
       )}
 
-      {/* ------------------------------------------------------------ ping */}
-      {!canEdit || !isToday ? null : due.length > 0 || extraPing ? (
-        <PingCard
-          label={due.length > 0 ? due[0].label : 'Extra check'}
-          onAnswer={(answer) => {
-            actions.addSample(now, { slot: due.length > 0 ? due[0].slot : 'manual', state: answer })
-            setExtraPing(false)
-          }}
-          onCancel={due.length > 0 ? undefined : () => setExtraPing(false)}
+      {/* ------------------------------------------------------- attention */}
+      {canEdit && (
+        <AttentionCard
+          date={date}
+          isToday={isToday}
+          due={isToday ? due : []}
+          upcoming={isToday ? upcoming : null}
+          extraPing={isToday && extraPing}
+          setExtraPing={setExtraPing}
+          onEdit={(id) => setSheet({ k: 'sample', id, date })}
         />
-      ) : (
-        <Card className="tight">
-          <div className="row between">
-            <div className="grow">
-              <div className="small">
-                <span className="done-mark">✓</span> Attention samples answered — {td.samples.length} today
-              </div>
-              <SampleBreakdown samples={td.samples} />
-              {upcoming && <div className="tiny muted">Next around {clock(upcoming.at)} · {slotLabel(upcoming.slot)}</div>}
-            </div>
-            <button className="btn small ghost" onClick={() => setExtraPing(true)} title="Answer one extra attention sample now">
-              + sample
-            </button>
-          </div>
-        </Card>
       )}
 
       {!canEdit && <LatestEntry />}
@@ -336,6 +322,11 @@ export function Today({ goToStages }: { goToStages: (d: Domain) => void }) {
         </Sheet>
       )}
       {sheet?.k === 'recovery' && <RecoverySheet id={sheet.id} onClose={close} />}
+      {sheet?.k === 'sample' && (
+        <Sheet open key={`sample-${sheet.id}`} title="Edit attention sample" onClose={close}>
+          <SampleForm date={sheet.date} id={sheet.id} onDone={close} />
+        </Sheet>
+      )}
     </>
   )
 }
@@ -491,21 +482,112 @@ function DayEvents({ date, onEdit }: { date: string; onEdit: (s: SheetKind) => v
   )
 }
 
-function PingCard({ label, onAnswer, onCancel }: { label: string; onAnswer: (s: SampleState) => void; onCancel?: () => void }) {
+/**
+ * Attention samples for the viewed day, in one place: the question when a ping
+ * is due, a clear confirmation once it is answered, and every recorded answer
+ * underneath — tap one to change or delete it. Past days list their samples
+ * but never ask: a sample is about the moment it is answered.
+ */
+function AttentionCard({ date, isToday, due, upcoming, extraPing, setExtraPing, onEdit }: {
+  date: string
+  isToday: boolean
+  due: DuePing[]
+  upcoming: { slot: PingSlot; at: number } | null
+  extraPing: boolean
+  setExtraPing: (v: boolean) => void
+  onEdit: (id: string) => void
+}) {
+  const { day, actions } = useApp()
+  const samples = [...day(date).samples].sort((a, b) => a.at.localeCompare(b.at))
+  const [saved, setSaved] = useState<{ id: string; state: SampleState; at: string } | null>(null)
+
+  useEffect(() => {
+    if (!saved) return
+    const t = window.setTimeout(() => setSaved(null), 8000)
+    return () => window.clearTimeout(t)
+  }, [saved])
+
+  // The confirmation only stands while the sample it confirms still exists.
+  const confirmed = saved && samples.some((s) => s.id === saved.id) ? saved : null
+  const asking = due.length > 0 || extraPing
+  const labelOf = (s: SampleState) => SAMPLE_OPTIONS.find((o) => o.state === s)?.label ?? s
+
+  const answer = (state: SampleState) => {
+    const id = actions.addSample(date, { slot: due.length > 0 ? due[0].slot : 'manual', state })
+    setSaved({ id, state, at: new Date().toISOString() })
+    setExtraPing(false)
+  }
+
   return (
     <Card
-      title={`${label} — what was your mind on?`}
-      desc="Answer for the moment just before you opened this. One tap."
-      right={onCancel ? <button className="btn small ghost" onClick={onCancel}>Cancel</button> : undefined}
+      title={isToday ? 'Attention samples' : `Attention samples — ${formatDay(date)}`}
+      right={<span className="pill">{samples.length} {isToday ? 'today' : 'recorded'}</span>}
     >
-      <div className="stack" style={{ gap: 6 }}>
-        {SAMPLE_OPTIONS.map((o) => (
-          <button key={o.state} className="btn full" style={{ justifyContent: 'space-between', display: 'flex', alignItems: 'center' }} onClick={() => onAnswer(o.state)}>
-            <span>{o.label}</span>
-            <span className="tiny muted">{o.hint}</span>
+      {confirmed && (
+        <div className="saved-strip" role="status">
+          <span className="saved-check" aria-hidden="true">✓</span>
+          <span className="grow">
+            Recorded <strong>{labelOf(confirmed.state)}</strong> · {formatTime(confirmed.at)}
+          </span>
+          <button className="linkbtn" onClick={() => { actions.removeSample(date, confirmed.id); setSaved(null) }}>
+            Undo
           </button>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {asking && (
+        <div className="ping">
+          <div className="ping-q">{due.length > 0 ? due[0].label : 'Extra check'} — what was your mind on?</div>
+          <p className="tiny muted" style={{ margin: '2px 0 10px' }}>
+            Answer for the moment just before you opened this. One tap.
+            {due.length > 1 && ` ${due.length - 1} more missed after this one.`}
+          </p>
+          <div className="stack" style={{ gap: 6 }}>
+            {SAMPLE_OPTIONS.map((o) => (
+              <button key={o.state} className="answer" onClick={() => answer(o.state)}>
+                <span>{o.label}</span>
+                <span className="tiny muted">{o.hint}</span>
+              </button>
+            ))}
+          </div>
+          {due.length === 0 && (
+            <button className="linkbtn" style={{ marginTop: 8 }} onClick={() => setExtraPing(false)}>Cancel</button>
+          )}
+        </div>
+      )}
+
+      {samples.length > 0 ? (
+        <>
+          {asking && <div className="divider-label">Recorded</div>}
+          {samples.map((s) => (
+            <button key={s.id} className={`event-row${confirmed?.id === s.id ? ' fresh' : ''}`} onClick={() => onEdit(s.id)}>
+              <span className="when">{formatTime(s.at)}</span>
+              <span className="what">
+                {labelOf(s.state)}
+                <small>{slotLabel(s.slot)}</small>
+              </span>
+              <span className="muted small">edit</span>
+            </button>
+          ))}
+        </>
+      ) : (
+        !asking && (
+          <p className="tiny muted" style={{ margin: 0 }}>
+            {isToday ? 'Nothing recorded yet today.' : 'No samples were recorded on this day.'}
+          </p>
+        )
+      )}
+
+      {isToday && !asking && (
+        <div className="row between" style={{ marginTop: 10, gap: 10 }}>
+          <span className="tiny muted">
+            {upcoming ? `Next around ${clock(upcoming.at)} · ${slotLabel(upcoming.slot)}` : 'No more scheduled today.'}
+          </span>
+          <button className="btn small ghost" onClick={() => setExtraPing(true)} title="Answer one extra attention sample now">
+            + sample
+          </button>
+        </div>
+      )}
     </Card>
   )
 }

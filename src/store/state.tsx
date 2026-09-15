@@ -66,8 +66,15 @@ function makeActions(update: (fn: (s: AppState) => AppState) => void) {
 
     deleteEvening: (date: ISODate) => patchDay(date, ({ evening: _, ...d }) => d),
 
-    addSample: (date: ISODate, sample: Omit<Sample, 'id' | 'at'>) =>
-      patchDay(date, (d) => ({ ...d, samples: [...d.samples, { ...sample, id: uid(), at: new Date().toISOString() }] })),
+    /** Returns the new sample's id, so the screen can offer to undo it. */
+    addSample: (date: ISODate, sample: Omit<Sample, 'id' | 'at'>) => {
+      const id = uid()
+      patchDay(date, (d) => ({ ...d, samples: [...d.samples, { ...sample, id, at: new Date().toISOString() }] }))
+      return id
+    },
+
+    updateSample: (date: ISODate, id: string, patch: Pick<Sample, 'state'>) =>
+      patchDay(date, (d) => ({ ...d, samples: d.samples.map((s) => (s.id === id ? { ...s, ...patch } : s)) })),
 
     removeSample: (date: ISODate, id: string) =>
       patchDay(date, (d) => ({ ...d, samples: d.samples.filter((s) => s.id !== id) })),
